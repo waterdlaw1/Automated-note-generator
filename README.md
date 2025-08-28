@@ -15,7 +15,7 @@ It uses **Hugging Face transformers** to create concise notes while keeping the 
 📂 Project Structure
 
 Automated-note-generator/
-│── text.py                # Main Streamlit app
+│── text_app.py                # Main Streamlit app
 │── requirements.txt      # Project dependencies
 │── README.md             # Documentation
 
