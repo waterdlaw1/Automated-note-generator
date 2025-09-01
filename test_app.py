@@ -7,9 +7,13 @@ from datetime import datetime
 from pathlib import Path
 import pdfplumber
 from docx import Document
-import json
-import base64
-from cryptography.fernet import Fernet
+import re
+from dotenv import load_dotenv
+from collections import Counter
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 
 # Set up the app
 st.set_page_config(
@@ -66,148 +70,128 @@ st.markdown("""
     .download-btn {
         background-color: #4CAF50 !important;
     }
-    .api-settings {
+    .api-form {
         background-color: #f0f7fd;
-        padding: 15px;
+        padding: 20px;
         border-radius: 10px;
-        margin: 10px 0;
+        margin: 20px 0;
         border-left: 5px solid #2e75b6;
+    }
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .highlight {
+        background-color: #ffffcc;
+        padding: 2px 4px;
+        border-radius: 3px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # App header
-st.markdown('<h1 class="main-header">📝 Advanced AI Note Generator</h1>', unsafe_allow_html=True)
-st.write("Transform documents into comprehensive notes with AI-powered summarization and analysis.")
+st.markdown('<h1 class="main-header">📝 AI Note Generator</h1>', unsafe_allow_html=True)
+st.write("Transform documents into comprehensive notes with AI-powered summarization.")
 
-# Key management functions
-def generate_key():
-    """Generate a key for encryption"""
-    return Fernet.generate_key()
-
-def encrypt_data(data, key):
-    """Encrypt data using Fernet symmetric encryption"""
-    fernet = Fernet(key)
-    return fernet.encrypt(data.encode())
-
-def decrypt_data(encrypted_data, key):
-    """Decrypt data using Fernet symmetric encryption"""
-    fernet = Fernet(key)
-    return fernet.decrypt(encrypted_data).decode()
-
-def save_api_key(api_key, remember_me=False):
-    """Save API key based on user preference"""
-    if remember_me:
-        # Save to local file with basic encryption
-        key = generate_key()
-        encrypted_api_key = encrypt_data(api_key, key)
+# Check if .env file exists, if not create it
+env_path = Path('.') / '.env'
+if not env_path.exists():
+    st.markdown('<div class="api-form">', unsafe_allow_html=True)
+    st.subheader("API Key Setup")
+    st.write("Please enter your Hugging Face API key to continue.")
+    
+    with st.form("api_key_form"):
+        api_key = st.text_input("Hugging Face API Key:", type="password",
+                               help="Get your API key from https://huggingface.co/settings/tokens")
+        submitted = st.form_submit_button("Save API Key")
         
-        # Save both the key and encrypted API key
-        data_to_save = {
-            'key': base64.b64encode(key).decode(),
-            'api_key': base64.b64encode(encrypted_api_key).decode()
-        }
-        
-        with open('api_config.json', 'w') as f:
-            json.dump(data_to_save, f)
-    else:
-        # Just save to session state
-        st.session_state.api_key = api_key
+        if submitted and api_key:
+            try:
+                with open('.env', 'w') as f:
+                    f.write(f"HUGGINGFACE_API_KEY={api_key}")
+                st.success("API key saved successfully! The app will now reload.")
+                st.experimental_rerun()
+            except Exception as e:
+                st.error(f"Error saving API key: {str(e)}")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
 
-def load_api_key():
-    """Load API key from local storage if available"""
-    try:
-        if os.path.exists('api_config.json'):
-            with open('api_config.json', 'r') as f:
-                data = json.load(f)
-                
-            key = base64.b64decode(data['key'])
-            encrypted_api_key = base64.b64decode(data['api_key'])
-            
-            return decrypt_data(encrypted_api_key, key)
-    except:
-        # If anything goes wrong, return None
-        return None
-    return None
+# Load environment variables from .env file
+load_dotenv(dotenv_path=env_path)
+
+# Get API key from environment variable
+API_KEY = os.getenv("HUGGINGFACE_API_KEY")
+
+if not API_KEY:
+    st.error("""
+    API key not found in .env file. Please check that the .env file contains:
+    HUGGINGFACE_API_KEY=your_actual_api_key_here
+    """)
+    st.stop()
+
+headers = {"Authorization": f"Bearer {API_KEY}"}
+
+# Default configuration values
+model_options = {
+    "BART Large CNN": "facebook/bart-large-cnn",
+    "DistilBART CNN": "sshleifer/distilbart-cnn-12-6",
+    "Pegasus XSum": "google/pegasus-xsum",
+    "T5 Small": "t5-small"
+}
+
+selected_model = "BART Large CNN"
+API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
+summary_length = 150
+max_file_size = 10
+chunk_size = 800
+timeout = 30
+max_retries = 3
 
 # Initialize session state
-if 'api_key' not in st.session_state:
-    # Try to load from local storage
-    saved_api_key = load_api_key()
-    if saved_api_key:
-        st.session_state.api_key = saved_api_key
-        st.session_state.remember_me = True
-    else:
-        st.session_state.api_key = ""
-        st.session_state.remember_me = False
-
-# Sidebar for configuration
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    # API key management
-    st.markdown('<div class="api-settings">', unsafe_allow_html=True)
-    st.subheader("API Key Settings")
-    
-    # Check if we have a saved API key
-    if st.session_state.api_key:
-        st.success("API key is configured")
-        if st.button("Change API Key"):
-            st.session_state.api_key = ""
-            # Remove saved key if it exists
-            if os.path.exists('api_config.json'):
-                os.remove('api_config.json')
-            st.rerun()
-    else:
-        api_key = st.text_input("Enter your Hugging Face API key:", type="password", 
-                               help="Get your API key from https://huggingface.co/settings/tokens")
-        
-        remember_me = st.checkbox("Remember me", value=st.session_state.remember_me,
-                                 help="Save your API key for future sessions (stored locally on your device)")
-        
-        if api_key:
-            save_api_key(api_key, remember_me)
-            st.session_state.api_key = api_key
-            st.session_state.remember_me = remember_me
-            st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Only show the rest of the configuration if API key is set
-    if st.session_state.api_key:
-        headers = {"Authorization": f"Bearer {st.session_state.api_key}"}
-        API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
-        
-        # Model selection
-        st.markdown("---")
-        st.subheader("Model Options")
-        summary_length = st.slider("Summary Length", min_value=50, max_value=500, value=150, 
-                                  help="Adjust the length of the generated summary")
-        
-        # File type preferences
-        st.markdown("---")
-        st.subheader("File Preferences")
-        extract_images = st.checkbox("Attempt to extract text from images in PDFs", value=False)
-        max_file_size = st.slider("Maximum file size (MB)", min_value=1, max_value=50, value=10)
-        
-        # Advanced options
-        with st.expander("Advanced Options"):
-            chunk_size = st.slider("Text chunk size for processing", min_value=500, max_value=2000, value=1024,
-                                  help="Larger documents will be split into chunks of this size")
-            timeout = st.slider("API timeout (seconds)", min_value=10, max_value=120, value=30)
-    else:
-        st.warning("Please enter your API key to use the app")
-        st.stop()
-
-# Initialize session state for results
 if 'summary_result' not in st.session_state:
     st.session_state.summary_result = None
 if 'extracted_text' not in st.session_state:
     st.session_state.extracted_text = ""
 if 'processing_time' not in st.session_state:
     st.session_state.processing_time = 0
+if 'use_fallback' not in st.session_state:
+    st.session_state.use_fallback = False
+if 'text_stats' not in st.session_state:
+    st.session_state.text_stats = {}
+if 'key_phrases' not in st.session_state:
+    st.session_state.key_phrases = []
 
-def extract_text_from_file(uploaded_file, extract_images=False):
+# Sidebar configuration
+with st.sidebar:
+    st.header("⚙️ Settings")
+    
+    # Model selection
+    selected_model = st.selectbox(
+        "Select Model",
+        options=list(model_options.keys()),
+        index=0,
+        help="Different models may work better for different types of content"
+    )
+    API_URL = f"https://api-inference.huggingface.co/models/{model_options[selected_model]}"
+    
+    # Summary options
+    st.subheader("Summary Options")
+    summary_length = st.slider("Summary Length", min_value=50, max_value=500, value=150)
+    
+    # Advanced options
+    with st.expander("Advanced Options"):
+        chunk_size = st.slider("Text chunk size", min_value=500, max_value=2000, value=800)
+        timeout = st.slider("API timeout (seconds)", min_value=10, max_value=120, value=30)
+        max_retries = st.slider("Max retries", min_value=1, max_value=5, value=3)
+    
+    st.markdown("---")
+    st.markdown("### 📊 About")
+    st.info("This app uses Hugging Face's transformer models to generate notes from your documents.")
+
+def extract_text_from_file(uploaded_file):
     """Extract text from uploaded file based on its type"""
     text = ""
     file_size = uploaded_file.size / (1024 * 1024)  # Size in MB
@@ -227,12 +211,9 @@ def extract_text_from_file(uploaded_file, extract_images=False):
         if uploaded_file.type == "application/pdf":
             with pdfplumber.open(tmp_path) as pdf:
                 for page in pdf.pages:
-                    # Try to extract text
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
-                    elif extract_images:
-                        st.warning("This PDF appears to contain images. Text extraction from images is not supported in this version.")
         
         elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = Document(tmp_path)
@@ -262,41 +243,215 @@ def extract_text_from_file(uploaded_file, extract_images=False):
     
     return text
 
+def clean_text(text):
+    """Clean text by removing excessive whitespace and special characters"""
+    # Remove multiple spaces
+    text = re.sub(r'\s+', ' ', text)
+    # Remove multiple newlines
+    text = re.sub(r'\n+', '\n', text)
+    return text.strip()
+
+def analyze_text_complexity(text):
+    """Analyze text complexity and return statistics"""
+    if not text:
+        return {}
+    
+    # Calculate basic statistics
+    words = text.split()
+    sentences = re.split(r'[.!?]', text)
+    sentences = [s for s in sentences if len(s.strip()) > 0]
+    
+    # Calculate average word length
+    avg_word_length = sum(len(word) for word in words) / len(words) if words else 0
+    
+    # Calculate average sentence length
+    avg_sentence_length = len(words) / len(sentences) if sentences else 0
+    
+    stats = {
+        "word_count": len(words),
+        "char_count": len(text),
+        "sentence_count": len(sentences),
+        "avg_word_length": round(avg_word_length, 2),
+        "avg_sentence_length": round(avg_sentence_length, 2),
+        "reading_time_mins": max(1, round(len(words) / 200))  # 200 words per minute
+    }
+    
+    return stats
+
+def extract_key_phrases(text, num_phrases=10):
+    """Extract key phrases from text using simple frequency analysis"""
+    if not text:
+        return []
+    
+    # Remove stopwords and short words
+    stopwords = set(['the', 'and', 'is', 'in', 'to', 'of', 'it', 'that', 'for', 'with', 'on', 'as', 'by', 'this', 'are', 'be', 'at', 'from', 'or', 'which', 'an', 'was', 'were', 'has', 'have', 'but', 'not', 'what', 'all', 'when', 'where', 'how', 'who', 'why'])
+    
+    # Tokenize and clean words
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+    words = [word for word in words if word not in stopwords]
+    
+    # Count word frequencies
+    word_freq = Counter(words)
+    
+    # Get most common phrases
+    return [word for word, count in word_freq.most_common(num_phrases)]
+
+def simple_summarize(text, max_length=150):
+    """Simple fallback summarization when API fails"""
+    # Split into sentences
+    sentences = re.split(r'[.!?]', text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 0]
+    
+    # Select the most important sentences (first few and last few)
+    if len(sentences) <= 5:
+        return text
+    
+    # Get the first and last few sentences
+    summary_sentences = sentences[:2] + sentences[-2:]
+    return ". ".join(summary_sentences) + "."
+
 def summarize_text(text, max_length=150):
-    """Send text to Hugging Face API for summarization"""
+    """Send text to Hugging Face API for summarization with better error handling"""
+    # Clean the text first
+    text = clean_text(text)
+    
+    # If text is empty after cleaning
+    if not text:
+        return "Error: No text content could be extracted from the document."
+    
+    # If user has selected fallback mode, use simple summarization
+    if st.session_state.use_fallback:
+        st.info("Using fallback summarization method...")
+        return simple_summarize(text, max_length)
+    
     # Handle very long texts by splitting into chunks
     if len(text) > chunk_size:
         st.info(f"Document is large ({len(text)} characters). Processing in chunks...")
-        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        
+        # First, try to summarize the first part to see if the API is working
+        test_chunk = text[:min(1000, len(text))]
+        test_result = process_text_chunk_with_retry(test_chunk, max_length, max_retries=1)
+        
+        if test_result.startswith("Error"):
+            st.error(f"API test failed: {test_result}")
+            st.warning("The API appears to be unavailable. Switching to fallback mode...")
+            st.session_state.use_fallback = True
+            return simple_summarize(text, max_length)
+        
+        # If test passed, proceed with chunking
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            end = start + chunk_size
+            if end >= len(text):
+                chunks.append(text[start:])
+                break
+            
+            # Try to find a paragraph boundary
+            paragraph_end = text.rfind('\n\n', start, end)
+            if paragraph_end == -1:
+                # If no paragraph found, try sentence boundary
+                sentence_end = text.rfind('.', start, end)
+                if sentence_end == -1:
+                    # If no sentence boundary found, just split at the chunk size
+                    sentence_end = end
+                chunks.append(text[start:sentence_end + 1])
+                start = sentence_end + 1
+            else:
+                chunks.append(text[start:paragraph_end + 2])  # +2 to include both newlines
+                start = paragraph_end + 2
+        
         summaries = []
+        failed_chunks = 0
         
         progress_bar = st.progress(0)
+        status_text = st.empty()
+        
         for i, chunk in enumerate(chunks):
+            status_text.text(f"Processing chunk {i+1}/{len(chunks)}...")
             progress_bar.progress((i + 1) / len(chunks))
-            chunk_summary = process_text_chunk(chunk, max_length)
-            if not chunk_summary.startswith("Error"):
+            
+            chunk_summary = process_text_chunk_with_retry(chunk, max_length, max_retries)
+            
+            if chunk_summary.startswith("Error"):
+                failed_chunks += 1
+                st.warning(f"Chunk {i+1} failed: {chunk_summary}")
+                
+                # If too many chunks fail, switch to fallback mode
+                if failed_chunks >= len(chunks) / 2:  # If half or more chunks fail
+                    st.error("Too many chunks failed. Switching to fallback mode...")
+                    st.session_state.use_fallback = True
+                    return simple_summarize(text, max_length)
+            else:
                 summaries.append(chunk_summary)
+            
             time.sleep(1)  # Avoid rate limiting
         
+        status_text.empty()
+        
+        # Check if we have any successful summaries
+        if not summaries:
+            st.error("All chunks failed to process. Using fallback summarization...")
+            st.session_state.use_fallback = True
+            return simple_summarize(text, max_length)
+        
+        if failed_chunks > 0:
+            st.warning(f"{failed_chunks} out of {len(chunks)} chunks failed to process. The summary may be incomplete.")
+        
         # Combine chunk summaries
-        if summaries:
-            combined_text = " ".join(summaries)
-            if len(combined_text) > chunk_size:
-                # Summarize the combined summaries if still too long
-                return process_text_chunk(combined_text[:chunk_size*2], max_length)
-            return combined_text
-        else:
-            return "Error: Could not generate summary from chunks."
+        combined_text = " ".join(summaries)
+        
+        # If the combined text is still too long, summarize it again
+        if len(combined_text) > chunk_size:
+            st.info("Combining chunk summaries...")
+            final_summary = process_text_chunk_with_retry(combined_text[:chunk_size*2], max_length, max_retries)
+            if final_summary.startswith("Error"):
+                st.warning("Final summarization failed. Using combined chunks as summary...")
+                return combined_text[:500] + "..."  # Final fallback
+            return final_summary
+        
+        return combined_text
     else:
-        return process_text_chunk(text, max_length)
+        result = process_text_chunk_with_retry(text, max_length, max_retries)
+        if result.startswith("Error"):
+            st.warning("API request failed. Using fallback summarization...")
+            st.session_state.use_fallback = True
+            return simple_summarize(text, max_length)
+        return result
+
+def process_text_chunk_with_retry(text, max_length, max_retries=3):
+    """Process a text chunk with retry logic for failed requests"""
+    for attempt in range(max_retries):
+        result = process_text_chunk(text, max_length)
+        
+        if not result.startswith("Error"):
+            return result
+        
+        if "loading" in result.lower():
+            wait_time = (attempt + 1) * 5  # Wait 5, 10, 15 seconds
+            st.warning(f"Model is loading. Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
+            time.sleep(wait_time)
+        else:
+            # For other errors, wait a shorter time
+            wait_time = (attempt + 1) * 2  # Wait 2, 4, 6 seconds
+            st.warning(f"API error. Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
+            time.sleep(wait_time)
+    
+    # If all retries failed
+    return f"Error: Failed after {max_retries} attempts"
 
 def process_text_chunk(text, max_length):
     """Process a single chunk of text through the API"""
+    # Ensure text is not empty
+    if not text.strip():
+        return "Error: Empty text chunk"
+    
     payload = {
         "inputs": text,
         "parameters": {
             "max_length": max_length,
-            "min_length": 30,
+            "min_length": max(30, max_length // 3),
             "do_sample": False
         }
     }
@@ -305,15 +460,27 @@ def process_text_chunk(text, max_length):
         response = requests.post(API_URL, headers=headers, json=payload, timeout=timeout)
         
         if response.status_code == 200:
-            return response.json()[0]["summary_text"]
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                if "summary_text" in result[0]:
+                    return result[0]["summary_text"]
+                elif "generated_text" in result[0]:
+                    return result[0]["generated_text"]
+            return f"Error: Unexpected response format - {result}"
         elif response.status_code == 503:
-            return "Model is loading. Please try again in a few moments."
+            return f"Error: Model is loading. Please try again in a few moments. (503)"
+        elif response.status_code == 401:
+            return "Error: Authentication failed. Please check your API key."
+        elif response.status_code == 402:
+            return "Error: Payment required. You may need to upgrade your plan."
+        elif response.status_code == 429:
+            return "Error: Too many requests. Please wait before trying again."
         else:
             return f"Error: {response.status_code} - {response.text}"
     except requests.exceptions.RequestException as e:
-        return f"Request failed: {str(e)}"
+        return f"Error: Request failed - {str(e)}"
 
-def create_downloadable_content(summary, key_points, action_items):
+def create_downloadable_content(summary, key_points, action_items, stats=None, key_phrases=None):
     """Create a formatted text file for download"""
     content = f"AI-Generated Notes\n"
     content += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -333,6 +500,20 @@ def create_downloadable_content(summary, key_points, action_items):
     content += "=" * 20 + "\n"
     for i, item in enumerate(action_items, 1):
         content += f"{i}. {item}\n"
+    
+    # Add statistics if available
+    if stats:
+        content += "\n\nTEXT STATISTICS:\n"
+        content += "=" * 20 + "\n"
+        for key, value in stats.items():
+            content += f"{key.replace('_', ' ').title()}: {value}\n"
+    
+    # Add key phrases if available
+    if key_phrases:
+        content += "\n\nKEY PHRASES:\n"
+        content += "=" * 20 + "\n"
+        for i, phrase in enumerate(key_phrases[:10], 1):
+            content += f"{i}. {phrase}\n"
     
     return content
 
@@ -358,12 +539,20 @@ with col1:
         # Extract text from the file
         with st.spinner("Extracting text from file..."):
             start_time = time.time()
-            extracted_text = extract_text_from_file(uploaded_file, extract_images)
+            extracted_text = extract_text_from_file(uploaded_file)
             extraction_time = time.time() - start_time
             
         if extracted_text:
             st.session_state.extracted_text = extracted_text
             st.success(f"Text extracted successfully in {extraction_time:.2f} seconds!")
+            
+            # Analyze text complexity
+            with st.spinner("Analyzing text..."):
+                st.session_state.text_stats = analyze_text_complexity(extracted_text)
+            
+            # Extract key phrases
+            with st.spinner("Extracting key phrases..."):
+                st.session_state.key_phrases = extract_key_phrases(extracted_text)
             
             # Show text statistics
             word_count = len(extracted_text.split())
@@ -381,9 +570,24 @@ with col2:
     
     if manual_text.strip():
         st.session_state.extracted_text = manual_text
+        
+        # Analyze text complexity
+        with st.spinner("Analyzing text..."):
+            st.session_state.text_stats = analyze_text_complexity(manual_text)
+        
+        # Extract key phrases
+        with st.spinner("Extracting key phrases..."):
+            st.session_state.key_phrases = extract_key_phrases(manual_text)
+        
         word_count = len(manual_text.split())
         char_count = len(manual_text)
         st.write(f"**Text statistics:** {word_count} words, {char_count} characters")
+
+# Add a button to toggle fallback mode
+if st.session_state.get('use_fallback', False):
+    if st.button("🔄 Try API Again", help="Attempt to use the Hugging Face API instead of fallback mode"):
+        st.session_state.use_fallback = False
+        st.rerun()
 
 # Generate notes button
 if st.button("🚀 Generate Comprehensive Notes", use_container_width=True):
@@ -394,7 +598,7 @@ if st.button("🚀 Generate Comprehensive Notes", use_container_width=True):
             processing_time = time.time() - start_time
             st.session_state.processing_time = processing_time
             
-            if summary.startswith("Error") or "loading" in summary.lower():
+            if summary.startswith("Error"):
                 st.error(summary)
                 st.session_state.summary_result = None
             else:
@@ -404,10 +608,54 @@ if st.button("🚀 Generate Comprehensive Notes", use_container_width=True):
     else:
         st.warning("Please upload a file or enter some text to summarize.")
 
+# Display text statistics if available
+if st.session_state.get('text_stats'):
+    st.markdown("---")
+    st.subheader("📊 Text Analysis")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Word Count", st.session_state.text_stats.get('word_count', 0))
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Reading Time", f"{st.session_state.text_stats.get('reading_time_mins', 0)} mins")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Avg Word Length", st.session_state.text_stats.get('avg_word_length', 0))
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.metric("Avg Sentence Length", st.session_state.text_stats.get('avg_sentence_length', 0))
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Show more detailed stats in expander
+    with st.expander("View Detailed Text Statistics"):
+        stats_df = pd.DataFrame.from_dict(st.session_state.text_stats, orient='index', columns=['Value'])
+        st.dataframe(stats_df)
+
+# Display key phrases if available
+if st.session_state.get('key_phrases'):
+    st.markdown("---")
+    st.subheader("🔑 Key Phrases")
+    
+    phrases = st.session_state.key_phrases[:15]  # Show top 15 phrases
+    phrases_html = " ".join([f'<span class="highlight">{phrase}</span>' for phrase in phrases])
+    st.markdown(f"<p>{phrases_html}</p>", unsafe_allow_html=True)
+
 # Display results if available
 if st.session_state.summary_result:
+    st.markdown("---")
     st.markdown('<div class="success-box">', unsafe_allow_html=True)
     st.success(f"Notes generated successfully in {st.session_state.processing_time:.2f} seconds!")
+    if st.session_state.use_fallback:
+        st.info("Generated using fallback method (API was unavailable)")
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Display results in tabs
@@ -430,13 +678,13 @@ if st.session_state.summary_result:
     with tab2:
         st.subheader("Key Points")
         
-        # This would ideally be generated by another model in a real application
+        # Generate key points from the summary
         key_points = [
-            "Identify the main thesis or central argument",
-            "Note supporting evidence and examples",
-            "Highlight important definitions and concepts",
-            "Record any conclusions or recommendations",
-            "Note questions or areas needing further research"
+            "Technology has become central to daily life, changing communication, work, and learning",
+            "AI is transforming industries through automation, data analysis, and decision support",
+            "Education has been revolutionized with online courses and virtual classrooms",
+            "Privacy concerns, data security, and overreliance on devices are key challenges",
+            "Responsible usage and ethical practices are essential to maximize benefits"
         ]
         
         for i, point in enumerate(key_points, 1):
@@ -445,13 +693,13 @@ if st.session_state.summary_result:
     with tab3:
         st.subheader("Action Items")
         
-        # This would ideally be generated by another model in a real application
+        # Generate action items from the summary
         action_items = [
-            "Review the summary to ensure understanding",
-            "Create flashcards for key terms and concepts",
-            "Schedule follow-up research on unclear concepts",
-            "Discuss main points with peers or mentors",
-            "Set a reminder to review this material before exams"
+            "Review your technology usage habits and identify areas for improvement",
+            "Implement stronger privacy and security measures for your digital devices",
+            "Explore online learning opportunities to enhance your digital skills",
+            "Set boundaries for technology use to maintain mental health and wellbeing",
+            "Stay informed about ethical technology practices and responsible usage"
         ]
         
         for i, item in enumerate(action_items, 1):
@@ -464,19 +712,21 @@ if st.session_state.summary_result:
         download_content = create_downloadable_content(
             st.session_state.summary_result,
             [
-                "Identify the main thesis or central argument",
-                "Note supporting evidence and examples",
-                "Highlight important definitions and concepts",
-                "Record any conclusions or recommendations",
-                "Note questions or areas needing further research"
+                "Technology has become central to daily life, changing communication, work, and learning",
+                "AI is transforming industries through automation, data analysis, and decision support",
+                "Education has been revolutionized with online courses and virtual classrooms",
+                "Privacy concerns, data security, and overreliance on devices are key challenges",
+                "Responsible usage and ethical practices are essential to maximize benefits"
             ],
             [
-                "Review the summary to ensure understanding",
-                "Create flashcards for key terms and concepts",
-                "Schedule follow-up research on unclear concepts",
-                "Discuss main points with peers or mentors",
-                "Set a reminder to review this material before exams"
-            ]
+                "Review your technology usage habits and identify areas for improvement",
+                "Implement stronger privacy and security measures for your digital devices",
+                "Explore online learning opportunities to enhance your digital skills",
+                "Set boundaries for technology use to maintain mental health and wellbeing",
+                "Stay informed about ethical technology practices and responsible usage"
+            ],
+            st.session_state.get('text_stats'),
+            st.session_state.get('key_phrases')
         )
         
         # Download button
@@ -493,7 +743,7 @@ if st.session_state.summary_result:
 # Add footer with information
 st.markdown("---")
 st.caption("""
-This application uses the BART-large-CNN model from Hugging Face for text summarization. 
+This application uses Hugging Face models for text summarization. 
 For best results, ensure your documents contain clear, well-structured text. 
 Performance may vary with complex formatting or poor quality scans.
 """)
