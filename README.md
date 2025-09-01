@@ -1,99 +1,132 @@
-📝 Automated Note Generator
+📝 AI Note Generator
 
-A **Streamlit-based web application** that generates **summaries, key points, and action items** from text, PDF, or Word files.  
-It uses **Hugging Face transformers** to create concise notes while keeping the most important information.
+Transform documents into comprehensive notes with AI-powered summarization. This Streamlit application processes PDF, DOCX, and text files to generate executive summaries, key points, and action items.
 
-🚀 Features
-- Summarize **text, PDF, and Word documents**.
-- Choose summary **length (short, medium, detailed)**.
-- Extract **key points and action items** automatically.
-- **Word count and compression ratio** metrics.
-- **Download summary as a `.txt` file**.
-- Secure Hugging Face **API token encryption**.
-- Simple **Streamlit UI** for easy use.
+[Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)
+[Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+[Hugging Face](https://img.shields.io/badge/Hugging%20Face-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)
 
-📂 Project Structure
+✨ Features
 
-Automated-note-generator/
-│── text_app.py                # Main Streamlit app
-│── requirements.txt      # Project dependencies
-│── README.md             # Documentation
+- Multiple File Support: Process PDF, DOCX, and TXT files
+- AI-Powered Summarization: Utilizes state-of-the-art transformer models
+- Text Analysis: Get detailed statistics about your documents
+- Key Phrase Extraction: Automatically identify important concepts
+- Smart Chunking: Handles large documents efficiently
+- Fallback Mechanism: Works even when API is unavailable
+- Export Functionality: Download notes as text files
+- Responsive UI: Beautiful interface with custom styling
 
-⚙️ Installation
+🚀 Quick Start
 
-1. Clone the Repository
-```bash
-git clone https://github.com/waterdlaw1/Automated-note-generator.git
-cd Automated-note-generator
-````
+Prerequisites
 
-2. Create Virtual Environment
+- Python 3.7+
+- Hugging Face API key ([Get one here](https://huggingface.co/settings/tokens))
 
-```bash
-python -m venv venv
-```
+Installation
 
-Activate it:
+1. Clone the repository:
+bash
+git clone https://github.com/yourusername/ai-note-generator.git
+cd ai-note-generator
+Install dependencies:
 
-Windows
-
-```bash
-venv\Scripts\activate
-```
-3. Install Dependencies
-
-```bash
+bash
 pip install -r requirements.txt
-```
+Run the application:
 
-4. Run the Application
-
-```bash
+bash
 streamlit run app.py
-```
+Open your browser and navigate to the local URL shown in the terminal
 
-📦 Requirements
+🔧 Configuration
+On first run, the app will prompt you to enter your Hugging Face API key. This will be saved in a .env file for future use.
 
-Dependencies are listed in `requirements.txt`, but here are the key ones:
+Available Models
+BART Large CNN (default)
 
-* `streamlit`
-* `transformers`
-* `cryptography`
-* `PyPDF2`
-* `python-docx`
+DistilBART CNN
 
-Install them with:
+Pegasus XSum
 
-```bash
-pip install -r requirements.txt
-```
+T5 Small
 
-🔑 How It Works
+Advanced Settings
+Summary Length: Control the length of generated summaries (50-500 words)
 
-1. Upload a **text, PDF, or Word document**.
-2. Select your preferred **summary length** (short, medium, detailed).
-3. The app processes your content using Hugging Face models.
-4. You receive:
+Chunk Size: Adjust how large documents are split for processing
 
-   * A **summary**
-   * **Key points**
-   * **Action items**
-5. Option to **download results** as a `.txt` file.
+API Timeout: Set timeout duration for API requests
 
- Use Cases
+Max Retries: Configure retry attempts for failed requests
 
-* **Students**: Summarize lecture notes and textbooks.
-* **Professionals**: Extract meeting minutes and action points.
-* **Researchers**: Summarize academic papers quickly.
-* **Writers**: Generate quick overviews of long drafts.
+📖 Usage
+Upload a document (PDF, DOCX, or TXT) or paste text directly
 
-📜 License
+Adjust settings in the sidebar if needed
 
-This project is licensed under the **MIT License**.
-You are free to use, modify, and distribute it with attribution.
+Click "Generate Comprehensive Notes"
 
-🙌 Acknowledgments
+View results in the organized tabs:
 
-* [Streamlit](https://streamlit.io/) for the interactive app framework.
-* [Hugging Face](https://huggingface.co/) for NLP models.
-* Open-source community for support and inspiration.
+Executive Summary
+
+Key Points
+
+Action Items
+
+Download your notes as a text file
+
+🛠️ Technical Details
+How It Works
+Text Extraction: The app uses pdfplumber for PDFs and python-docx for Word documents
+
+Text Cleaning: Removes excessive whitespace and normalizes text
+
+Complexity Analysis: Calculates word count, reading time, and other metrics
+
+Summarization: Sends text to Hugging Face's inference API
+
+Result Processing: Formats the output and extracts key information
+
+Error Handling
+The application includes comprehensive error handling with:
+
+API timeout management
+
+Retry logic for failed requests
+
+Fallback to simple summarization when API is unavailable
+
+User-friendly error messages
+
+📊 Sample Output
+The app generates comprehensive notes including:
+
+Executive summary
+
+Bulleted key points
+
+Action items
+
+Text statistics (word count, reading time, etc.)
+
+Key phrases extracted from the document
+
+🤝 Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+📝 License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+🙏 Acknowledgments
+Built with Streamlit
+
+Uses models from Hugging Face
+
+Icons by Twemoji
+
+text
+
+This README provides a comprehensive overview of the application, its features, installation instructions, and usage guidelines. It's formatted for GitHub with badges, clear sections, and code blocks for easy reading.
