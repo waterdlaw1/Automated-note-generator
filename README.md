@@ -126,7 +126,3 @@ Built with Streamlit
 Uses models from Hugging Face
 
 Icons by Twemoji
-
-text
-
-This README provides a comprehensive overview of the application, its features, installation instructions, and usage guidelines. It's formatted for GitHub with badges, clear sections, and code blocks for easy reading.
